@@ -12,16 +12,86 @@ contract RebaseTokenTest is Test {
     RebaseToken private rebaseToken;
     Vault private vault;
 
-    address public owner = makeAddr("owner");
-    address public user = makeAddr("user");
+    address public owner = makeAddr("owner-345433356678");
+    address public user = makeAddr("user-23243456677687");
 
     function setUp() public {
-        vm.prank(owner);
+        vm.startPrank(owner);
         rebaseToken = new RebaseToken();
         vault = new Vault(IRebaseToken(address(rebaseToken)));
         rebaseToken.grantMintAndBurnRole(address(vault));
-        (bool success,) = payable(address(vault)).call{value: 1e18}("");
-        vm.stopPrank;
+        vm.stopPrank();
     }
 
+    function addRewardsToVault(uint256 amount) public {
+        // send some rewards to the vault using the receive function
+        (bool success,) = payable(address(vault)).call{value: amount}("");
+        assertEq(success, true);
+    }
+
+    function testDepositLinear(uint256 amount) public {
+        amount = bound(amount, 1e4, type(uint96).max);
+        // Deposit
+        vm.startPrank(user);
+        vm.deal(user, amount);
+        vault.deposit{value: amount}();
+        // check our rebase token balance
+        uint256 startBalance = rebaseToken.balanceOf(user);
+        console.log("StartBalance", startBalance);
+        assertEq(startBalance, amount);
+        // warp the time and check the balance again
+        vm.warp(block.timestamp + 1 hours);
+        uint256 middleBalance = rebaseToken.balanceOf(user);
+        console.log("MiddleBalance", middleBalance);
+        assertGt(middleBalance, startBalance);
+        // warp the time by the same amount and check the balance again
+        vm.warp(block.timestamp + 1 hours);
+        uint256 endBalance = rebaseToken.balanceOf(user);
+        console.log("endBalance", endBalance);
+        assertGt(endBalance, middleBalance);
+        assertApproxEqAbs(endBalance - middleBalance, middleBalance - startBalance, 1);
+        vm.stopPrank();
+    }
+
+    function testRedeemStraightAway(uint256 amount) public {
+        amount = bound(amount, 1e5, type(uint96).max);
+        // deposit
+        vm.startPrank(user);
+        vm.deal(user, amount);
+        vault.deposit{value: amount}();
+        assertEq(rebaseToken.balanceOf(user), amount);
+        // redeem
+        vault.redeem(type(uint256).max);
+        assertEq(rebaseToken.balanceOf(user), 0);
+        assertEq(address(user).balance, amount);
+        vm.stopPrank();
+    }
+
+    function testRedeemAfterTimeHasPassed( uint256 depositAmount, uint256 time) public {
+        time = bound(time, 1000, type(uint96).max);
+        depositAmount = bound(depositAmount, 1e5, type(uint96).max);
+        // deposit
+        vm.deal(user, depositAmount);
+        vm.prank(user);
+        vault.deposit{value: depositAmount}();
+
+        //warp the time
+        vm.warp(block.timestamp + time);
+
+        // Get balance after time has passed
+        uint256 balance = rebaseToken.balanceOf(user);
+
+        // Add rewards to the vault
+        vm.deal(owner, balance - depositAmount);
+        vm.prank(owner);
+        addRewardsToVault(balance - depositAmount);
+
+        //Redeem
+        vm.prank(user);
+        vault.redeem(type(uint256).max);
+
+        uint256 ethBalance = address(user).balance;
+        assertEq(ethBalance, balance);
+        assertGt(balance, depositAmount);
+    }
 }
