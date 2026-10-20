@@ -120,6 +120,7 @@ contract RebaseTokenTest is Test {
         //Transfer
         vm.prank(user);
         bool transferSuccessful = rebaseToken.transfer(user2, amountToSend);
+        assertTrue(transferSuccessful);
         uint256 userBalanceAfterTransfer = rebaseToken.balanceOf(user);
         uint256 user2BalanceAfterTransfer = rebaseToken.balanceOf(user2);
 
